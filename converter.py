@@ -61,6 +61,16 @@ def convert_logo_gcode(input_file, output_file, max_x=200, max_y=192,
                 f_out.write(';' + line + ' ;Removed for Marlin compatibility\n')
                 continue
 
+            # Convert M106/M107 pump commands to Z-axis valve control
+            if re.search(r'^\s*M106', line):
+                # M106 = Pump on → Convert to valve open
+                f_out.write(f'G00 Z{valve_open_z} ;Valve open\n')
+                continue
+            elif re.search(r'^\s*M107', line):
+                # M107 = Pump off → Convert to valve close
+                f_out.write(f'G00 Z{valve_close_z} ;Valve closed\n')
+                continue
+
             # Fix Z-axis valve control based on user-defined values
             # Handle negative Z values (convert to positive open value)
             if 'Z-' in line:
