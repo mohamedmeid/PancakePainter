@@ -5,7 +5,9 @@ import re
 import sys
 import os
 
-def convert_logo_gcode(input_file, output_file, max_x=200, max_y=192, home_x=0, home_y=0, valve_open_z=10, valve_close_z=0):
+def convert_logo_gcode(input_file, output_file, max_x=200, max_y=192,
+                       print_min_x=0, print_min_y=0, home_x=0, home_y=0,
+                       valve_open_z=10, valve_close_z=0):
     # First pass: find coordinate bounds
     min_x = float('inf')
     max_x_found = float('-inf')
@@ -27,19 +29,24 @@ def convert_logo_gcode(input_file, output_file, max_x=200, max_y=192, home_x=0, 
     width = max_x_found - min_x
     height = max_y_found - min_y
 
-    # Scale to fit with 10mm margin on each side
-    scale_x = (max_x - 20) / width
-    scale_y = (max_y - 20) / height
+    # Calculate available printing area
+    print_width = max_x - print_min_x
+    print_height = max_y - print_min_y
+
+    # Scale to fit with 10mm margin on each side within the printable area
+    scale_x = (print_width - 20) / width
+    scale_y = (print_height - 20) / height
     scale = min(scale_x, scale_y)  # Use same scale for both to maintain aspect ratio
 
-    # Calculate offset to center the logo and apply home position
+    # Calculate offset to center within printable area and apply home position
     new_width = width * scale
     new_height = height * scale
-    offset_x = home_x + (max_x - new_width) / 2 - min_x * scale
-    offset_y = home_y + (max_y - new_height) / 2 - min_y * scale
+    offset_x = home_x + print_min_x + (print_width - new_width) / 2 - min_x * scale
+    offset_y = home_y + print_min_y + (print_height - new_height) / 2 - min_y * scale
 
     print(f"Original bounds: X={min_x:.1f} to {max_x_found:.1f}, Y={min_y:.1f} to {max_y_found:.1f}")
     print(f"Original size: {width:.1f}mm x {height:.1f}mm")
+    print(f"Printable area: X={print_min_x:.1f} to {max_x:.1f}, Y={print_min_y:.1f} to {max_y:.1f}")
     print(f"Scale factor: {scale:.4f}")
     print(f"New size: {new_width:.1f}mm x {new_height:.1f}mm")
     print(f"Offset: X+{offset_x:.1f}, Y+{offset_y:.1f}")
@@ -110,7 +117,14 @@ def convert_logo_gcode(input_file, output_file, max_x=200, max_y=192, home_x=0, 
                 max_y_new = max(max_y_new, y)
 
     print(f"\nNew bounds: X={min_x_new:.1f} to {max_x_new:.1f}, Y={min_y_new:.1f} to {max_y_new:.1f}")
-    print(f"✓ Fits within X:{max_x}mm, Y:{max_y}mm limits!")
+
+    # Verify the design fits within the printable area
+    if min_x_new >= print_min_x and max_x_new <= max_x and min_y_new >= print_min_y and max_y_new <= max_y:
+        print(f"✓ Passt perfekt in den Druckbereich! (X:{print_min_x}-{max_x}mm, Y:{print_min_y}-{max_y}mm)")
+    else:
+        print(f"⚠ WARNUNG: Design könnte außerhalb des Druckbereichs liegen!")
+        print(f"  Druckbereich: X:{print_min_x}-{max_x}mm, Y:{print_min_y}-{max_y}mm")
+        print(f"  Design-Bereich: X:{min_x_new:.1f}-{max_x_new:.1f}mm, Y:{min_y_new:.1f}-{max_y_new:.1f}mm")
 
 def get_positive_float(prompt, default=None):
     """Helper function to get a positive float from user input"""
@@ -159,17 +173,34 @@ if __name__ == '__main__':
     valve_open_z = get_positive_float("Z-Wert für Ventil OFFEN (mm)", default=10)
     valve_close_z = get_positive_float("Z-Wert für Ventil GESCHLOSSEN (mm)", default=0)
 
-    # Get printer dimensions
-    print("\n--- Drucker-Abmessungen ---")
-    max_x = get_positive_float("Maximale X-Abmessung (mm)", default=200)
-    max_y = get_positive_float("Maximale Y-Abmessung (mm)", default=192)
+    # Get printer dimensions and printable area
+    print("\n--- Drucker-Abmessungen und Druckbereich ---")
+    print("(Definieren Sie den sicheren Druckbereich, z.B. Heizplattengröße)")
+    print_min_x = get_positive_float("Minimale X-Position des Druckbereichs (mm)", default=0)
+    max_x = get_positive_float("Maximale X-Position des Druckbereichs (mm)", default=200)
+    print_min_y = get_positive_float("Minimale Y-Position des Druckbereichs (mm)", default=0)
+    max_y = get_positive_float("Maximale Y-Position des Druckbereichs (mm)", default=192)
+
+    # Validate that min < max
+    if print_min_x >= max_x:
+        print(f"\nFehler: Minimale X-Position ({print_min_x}) muss kleiner als maximale X-Position ({max_x}) sein!")
+        sys.exit(1)
+    if print_min_y >= max_y:
+        print(f"\nFehler: Minimale Y-Position ({print_min_y}) muss kleiner als maximale Y-Position ({max_y}) sein!")
+        sys.exit(1)
+
+    # Show the calculated printable area
+    print(f"\n→ Druckbereich: {max_x - print_min_x:.1f}mm x {max_y - print_min_y:.1f}mm")
+    print(f"  (X: {print_min_x:.1f}-{max_x:.1f}mm, Y: {print_min_y:.1f}-{max_y:.1f}mm)")
 
     # Generate output filename by adding "_fixed" before the extension
     base_name, ext = os.path.splitext(input_file)
     output_file = f"{base_name}_fixed{ext}"
 
     print(f"\nKonvertierung läuft...\n")
-    convert_logo_gcode(input_file, output_file, max_x=max_x, max_y=max_y,
+    convert_logo_gcode(input_file, output_file,
+                       max_x=max_x, max_y=max_y,
+                       print_min_x=print_min_x, print_min_y=print_min_y,
                        home_x=home_x, home_y=home_y,
                        valve_open_z=valve_open_z, valve_close_z=valve_close_z)
     print(f'\n✓ Erfolgreich konvertiert: {output_file}')
